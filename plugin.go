@@ -75,6 +75,9 @@ func (p Plugin) Exec() error {
 		log.Fatal("KUBE_TEMPLATE, or template must be defined")
 	}
 
+	log.Printf("KUBE_SERVER: %s\n KUBE_CA: %s\n KUBE_TOKEN: %s\n",
+		p.Config.Server, p.Config.Ca, p.Config.Token)
+
 	// connect to Kubernetes
 	clientset, err := p.createKubeClient()
 	if err != nil {
@@ -159,7 +162,7 @@ func (p Plugin) createKubeClient() (*kubernetes.Clientset, error) {
 	ca, err := base64.StdEncoding.DecodeString(p.Config.Ca)
 	config := clientcmdapi.NewConfig()
 	config.Clusters["drone"] = &clientcmdapi.Cluster{
-		Server: p.Config.Server,
+		Server:                   p.Config.Server,
 		CertificateAuthorityData: ca,
 	}
 	config.AuthInfos["drone"] = &clientcmdapi.AuthInfo{
