@@ -46,6 +46,7 @@ type (
 		Token     string
 		Namespace string
 		Template  string
+		Ingress   string
 	}
 
 	Plugin struct {
@@ -56,7 +57,7 @@ type (
 	}
 )
 
-func (p Plugin) Exec() error {
+func (p *Plugin) Exec() error {
 
 	if p.Config.Server == "" {
 		log.Fatal("KUBE_SERVER is not defined")
@@ -110,8 +111,78 @@ func (p Plugin) Exec() error {
 	}
 
 	err = p.applyService(&svc, clientset)
+	if err != nil {
+		return err
+	}
+
+	if p.Config.Ingress != "" {
+		var ig v1beta1.Ingress
+
+		// parse the template file and do substitutions
+		txt, err := openAndSub(p.Config.Ingress, p)
+		if err != nil {
+			return err
+		}
+
+		dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
+		err = dc.Decode(&ig)
+		if err != nil {
+			log.Fatal("Error decoding yaml file to json", err)
+		}
+
+		err = p.applyIngress(&ig, clientset)
+	}
 
 	return err
+}
+
+func (p *Plugin) applyIngress(ig *v1beta1.Ingress, client *kubernetes.Clientset) error {
+	// check and see if there is a deployment already.  If there is, update it.
+	oldDep, err := findIngress(ig.ObjectMeta.Name, ig.ObjectMeta.Namespace, client)
+	if err != nil {
+		return err
+	}
+	if oldDep.ObjectMeta.Name == ig.ObjectMeta.Name {
+		// update the existing deployment, ignore the deployment that it comes back with
+		_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Update(ig)
+		return err
+	}
+	// create the new deployment since this never existed.
+	_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Create(ig)
+
+	return err
+}
+
+func (p *Plugin) decodeYamlToObject(fName string, objects ...interface{}) error {
+	return nil
+}
+
+func findIngress(igName string, namespace string, c *kubernetes.Clientset) (v1beta1.Ingress, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
+	var d v1beta1.Ingress
+	ingresses, err := listIngresses(c, namespace)
+	if err != nil {
+		return d, err
+	}
+	for _, thisIg := range ingresses {
+		if thisIg.ObjectMeta.Name == igName {
+			return thisIg, err
+		}
+	}
+	return d, err
+}
+
+// List the deployments
+func listIngresses(clientset *kubernetes.Clientset, namespace string) ([]v1beta1.Ingress, error) {
+	// docs on this:
+	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
+	ingresses, err := clientset.ExtensionsV1beta1().Ingresses(namespace).List(v1.ListOptions{})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	return ingresses.Items, err
 }
 
 func (p *Plugin) applyDeployment(dep *v1beta1.Deployment, client *kubernetes.Clientset) error {
@@ -205,7 +276,7 @@ func listServices(clientset *kubernetes.Clientset, namespace string) ([]v1.Servi
 }
 
 // open up the template and then sub variables in. Handlebar stuff.
-func openAndSub(templateFile string, p Plugin) (string, error) {
+func openAndSub(templateFile string, p *Plugin) (string, error) {
 	t, err := ioutil.ReadFile(templateFile)
 	if err != nil {
 		return "", err

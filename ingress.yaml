@@ -1,0 +1,16 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kong-admin
+  namespace:  kong
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+    - host: kong-admin.kuainiujinke.com
+      http:
+        paths:
+          - path: "/"
+            backend:
+              serviceName: kong-ingress-controller
+              servicePort: 8001

@@ -43,6 +43,11 @@ func main() {
 			EnvVar: "KUBE_TEMPLATE,PLUGIN_TEMPLATE",
 		},
 		cli.StringFlag{
+			Name:   "ingress",
+			Usage:  "template file to use for ingress: ingress.yaml :-)",
+			EnvVar: "KUBE_INGRESS_TEMPLATE,PLUGIN_INGRESS_TEMPLATE",
+		},
+		cli.StringFlag{
 			Name:   "repo.owner",
 			Usage:  "repository owner",
 			EnvVar: "DRONE_REPO_OWNER",
@@ -152,6 +157,7 @@ func run(c *cli.Context) error {
 			Ca:        c.String("ca"),
 			Namespace: c.String("namespace"),
 			Template:  c.String("template"),
+			Ingress:   c.String("ingress"),
 		},
 	}
 
