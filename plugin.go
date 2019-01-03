@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
@@ -8,10 +9,8 @@ import (
 	"time"
 
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api"
 	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
-	"k8s.io/client-go/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	utilyaml "k8s.io/kubernetes/pkg/util/yaml"
@@ -89,30 +88,62 @@ func (p Plugin) Exec() error {
 	if err != nil {
 		return err
 	}
-	// convert txt back to []byte and convert to json
-	json, err := utilyaml.ToJSON([]byte(txt))
+
+	var dep v1beta1.Deployment
+	var svc v1.Service
+
+	//convert YAML to Objects
+	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
+	err = dc.Decode(&dep)
+	if err != nil {
+		log.Fatal("Error decoding yaml file to json", err)
+	}
+
+	err = dc.Decode(&svc)
+	if err != nil {
+		log.Fatal("Error decoding yaml file to json", err)
+	}
+
+	err = p.applyDeployment(&dep, clientset)
 	if err != nil {
 		return err
 	}
 
-	var dep v1beta1.Deployment
+	err = p.applyService(&svc, clientset)
 
-	e := runtime.DecodeInto(api.Codecs.UniversalDecoder(), json, &dep)
-	if e != nil {
-		log.Fatal("Error decoding yaml file to json", e)
-	}
+	return err
+}
+
+func (p *Plugin) applyDeployment(dep *v1beta1.Deployment, client *kubernetes.Clientset) error {
 	// check and see if there is a deployment already.  If there is, update it.
-	oldDep, err := findDeployment(dep.ObjectMeta.Name, dep.ObjectMeta.Namespace, clientset)
+	oldDep, err := findDeployment(dep.ObjectMeta.Name, dep.ObjectMeta.Namespace, client)
 	if err != nil {
 		return err
 	}
 	if oldDep.ObjectMeta.Name == dep.ObjectMeta.Name {
 		// update the existing deployment, ignore the deployment that it comes back with
-		_, err = clientset.ExtensionsV1beta1().Deployments(p.Config.Namespace).Update(&dep)
+		_, err = client.ExtensionsV1beta1().Deployments(p.Config.Namespace).Update(dep)
 		return err
 	}
 	// create the new deployment since this never existed.
-	_, err = clientset.ExtensionsV1beta1().Deployments(p.Config.Namespace).Create(&dep)
+	_, err = client.ExtensionsV1beta1().Deployments(p.Config.Namespace).Create(dep)
+
+	return err
+}
+
+func (p *Plugin) applyService(svc *v1.Service, client *kubernetes.Clientset) error {
+	// check and see if there is a deployment already.  If there is, update it.
+	oldDep, err := findService(svc.ObjectMeta.Name, svc.ObjectMeta.Namespace, client)
+	if err != nil {
+		return err
+	}
+	if oldDep.ObjectMeta.Name == svc.ObjectMeta.Name {
+		// update the existing deployment, ignore the deployment that it comes back with
+		_, err = client.CoreV1().Services(p.Config.Namespace).Update(svc)
+		return err
+	}
+	// create the new deployment since this never existed.
+	_, err = client.CoreV1().Services(p.Config.Namespace).Create(svc)
 
 	return err
 }
@@ -143,6 +174,34 @@ func listDeployments(clientset *kubernetes.Clientset, namespace string) ([]v1bet
 		log.Fatal(err.Error())
 	}
 	return deployments.Items, err
+}
+
+func findService(svcName string, namespace string, c *kubernetes.Clientset) (v1.Service, error) {
+	if namespace == "" {
+		namespace = "default"
+	}
+	var d v1.Service
+	services, err := listServices(c, namespace)
+	if err != nil {
+		return d, err
+	}
+	for _, thisSvc := range services {
+		if thisSvc.ObjectMeta.Name == svcName {
+			return thisSvc, err
+		}
+	}
+	return d, err
+}
+
+// List the services
+func listServices(clientset *kubernetes.Clientset, namespace string) ([]v1.Service, error) {
+	// docs on this:
+	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
+	services, err := clientset.CoreV1().Services(namespace).List(v1.ListOptions{})
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	return services.Items, err
 }
 
 // open up the template and then sub variables in. Handlebar stuff.
