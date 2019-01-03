@@ -55,6 +55,18 @@ type (
 		Config Config
 		Job    Job
 	}
+
+	Deployment struct {
+		v1beta1.Deployment
+	}
+
+	Service struct {
+		v1.Service
+	}
+
+	Ingress struct {
+		v1beta1.Ingress
+	}
 )
 
 func (p *Plugin) Exec() error {
@@ -84,32 +96,15 @@ func (p *Plugin) Exec() error {
 		log.Fatal(err.Error())
 	}
 
-	// parse the template file and do substitutions
-	txt, err := openAndSub(p.Config.Template, p)
-	if err != nil {
-		return err
-	}
-
 	var dep v1beta1.Deployment
 	var svc v1.Service
 
-	//convert YAML to Objects
-	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
-	err = dc.Decode(&dep)
-	if err != nil {
-		log.Fatal("Error decoding yaml file to json", err)
-	}
-
-	err = dc.Decode(&svc)
-	if err != nil {
-		log.Fatal("Error decoding yaml file to json", err)
-	}
+	err = p.decodeYamlToObjects(p.Config.Template, &dep, &svc)
 
 	err = p.applyDeployment(&dep, clientset)
 	if err != nil {
 		return err
 	}
-
 	err = p.applyService(&svc, clientset)
 	if err != nil {
 		return err
@@ -117,20 +112,12 @@ func (p *Plugin) Exec() error {
 
 	if p.Config.Ingress != "" {
 		var ig v1beta1.Ingress
+		err = p.decodeYamlToObjects(p.Config.Ingress, &ig)
+		err = p.applyIngress(&ig, clientset)
 
-		// parse the template file and do substitutions
-		txt, err := openAndSub(p.Config.Ingress, p)
 		if err != nil {
 			return err
 		}
-
-		dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
-		err = dc.Decode(&ig)
-		if err != nil {
-			log.Fatal("Error decoding yaml file to json", err)
-		}
-
-		err = p.applyIngress(&ig, clientset)
 	}
 
 	return err
@@ -153,7 +140,20 @@ func (p *Plugin) applyIngress(ig *v1beta1.Ingress, client *kubernetes.Clientset)
 	return err
 }
 
-func (p *Plugin) decodeYamlToObject(fName string, objects ...interface{}) error {
+func (p *Plugin) decodeYamlToObjects(fName string, objects ...interface{}) error {
+	// parse the template file and do substitutions
+	txt, err := openAndSub(p.Config.Template, p)
+	if err != nil {
+		return err
+	}
+	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
+	for _, o := range objects {
+		err = dc.Decode(&o)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
