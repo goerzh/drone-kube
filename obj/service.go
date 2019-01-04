@@ -35,13 +35,11 @@ func (s *Service) Apply(client *kubernetes.Clientset) error {
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		scheme := runtime.NewScheme()
-		obj, err := scheme.New(oldDep.GetObjectKind().GroupVersionKind())
 		if err != nil {
 			return errors.WithStack(err)
 		}
 
-		patch, err := strategicpatch.StrategicMergePatch(originalJS, patchJS, obj)
+		patch, err := strategicpatch.StrategicMergePatch(originalJS, patchJS, oldDep)
 		if err != nil {
 			return errors.WithStack(err)
 		}
