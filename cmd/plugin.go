@@ -75,22 +75,7 @@ func (p *Plugin) Exec() error {
 		log.Fatal(err.Error())
 	}
 
-	var svc obj.Service
-	txt, err := openAndSub(p.Config.Service, p)
-	if err != nil {
-		return err
-	}
-	svc.Patch = txt
-	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
-	err = dc.Decode(&svc.Data)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	err = svc.Apply(clientset)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
+	// apply deployment
 	var dep v1beta1.Deployment
 
 	err = p.decodeYamlToObjects(p.Config.Template, &dep)
@@ -103,6 +88,24 @@ func (p *Plugin) Exec() error {
 		return errors.WithStack(err)
 	}
 
+	// apply service
+	if p.Config.Service != "" {
+		txt, err := openAndSub(p.Config.Service, p)
+		if err != nil {
+			return err
+		}
+		svc, err := obj.NewService(txt, p.Config)
+		if err != nil {
+			return err
+		}
+
+		err = svc.Apply(clientset)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+	}
+
+	// apply ingress
 	if p.Config.Ingress != "" {
 		var ig v1beta1.Ingress
 		err = p.decodeYamlToObjects(p.Config.Ingress, &ig)
