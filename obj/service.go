@@ -47,12 +47,17 @@ func (s *Service) Apply(client *kubernetes.Clientset) error {
 
 		// update the existing deployment, ignore the deployment that it comes back with
 		_, err = client.CoreV1().Services(s.Config.Namespace).Patch(oldDep.Name, api.StrategicMergePatchType, patch)
-		return errors.WithStack(err)
+		if err != nil {
+			return errors.WithStack(err)
+		}
 	}
 	// create the new deployment since this never existed.
 	_, err = client.CoreV1().Services(s.Config.Namespace).Create(&s.Data)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 
-	return errors.WithStack(err)
+	return nil
 }
 
 func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset) (v1.Service, error) {
@@ -66,10 +71,10 @@ func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset
 	}
 	for _, thisSvc := range services {
 		if thisSvc.ObjectMeta.Name == svcName {
-			return thisSvc, errors.WithStack(err)
+			return thisSvc, nil
 		}
 	}
-	return d, err
+	return d, nil
 }
 
 // List the services
@@ -80,5 +85,5 @@ func (s *Service) list(clientset *kubernetes.Clientset, namespace string) ([]v1.
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	return services.Items, err
+	return services.Items, nil
 }
