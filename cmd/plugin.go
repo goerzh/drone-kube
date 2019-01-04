@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/goerzh/drone-kube/obj"
 	"github.com/goerzh/drone-kube/util"
+	"github.com/pkg/errors"
 	"io/ioutil"
 	"log"
 	"time"
@@ -64,12 +65,9 @@ func (p *Plugin) Exec() error {
 	if p.Config.Namespace == "" {
 		p.Config.Namespace = "default"
 	}
-	if p.Config.Template == "" && p.Config.Service == "" && p.Config.Ingress == "" {
-		log.Fatal("KUBE_TEMPLATE and KUBE_SERVICE_TEMPLATE or KUBE_INGRESS_TEMPLATE or template must be defined")
+	if p.Config.Template == "" {
+		log.Fatal("KUBE_TEMPLATE or template must be defined")
 	}
-
-	log.Printf("KUBE_SERVER: %s\n KUBE_CA: %s\n KUBE_TOKEN: %s\n",
-		p.Config.Server, p.Config.Ca, p.Config.Token)
 
 	// connect to Kubernetes
 	clientset, err := p.createKubeClient()
@@ -86,20 +84,23 @@ func (p *Plugin) Exec() error {
 	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
 	err = dc.Decode(&svc.Data)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	err = svc.Apply(clientset)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	var dep v1beta1.Deployment
 
 	err = p.decodeYamlToObjects(p.Config.Template, &dep)
+	if err != nil {
+		return errors.WithStack(err)
+	}
 
 	err = p.applyDeployment(&dep, clientset)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 
 	if p.Config.Ingress != "" {
@@ -108,7 +109,7 @@ func (p *Plugin) Exec() error {
 		err = p.applyIngress(&ig, clientset)
 
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 	}
 
