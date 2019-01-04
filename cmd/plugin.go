@@ -138,7 +138,7 @@ func (p *Plugin) applyIngress(ig *v1beta1.Ingress, client *kubernetes.Clientset)
 
 func (p *Plugin) decodeYamlToObjects(fName string, objects ...interface{}) error {
 	// parse the template file and do substitutions
-	txt, err := openAndSub(p.Config.Template, p)
+	txt, err := openAndSub(fName, p)
 	if err != nil {
 		return err
 	}
