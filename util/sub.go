@@ -1,4 +1,4 @@
-package main
+package util
 
 // this is taken and modified from:
 // https://raw.githubusercontent.com/drone-plugins/drone-slack/master/template.go
@@ -17,6 +17,16 @@ import (
 
 func init() {
 	raymond.RegisterHelpers(funcs)
+}
+
+// open up the template and then sub variables in. Handlebar stuff.
+func OpenAndSub(templateFile string, p interface{}) (string, error) {
+	t, err := ioutil.ReadFile(templateFile)
+	if err != nil {
+		return "", err
+	}
+	//potty humor!  Render trim toilet paper!  Ha ha, so funny.
+	return RenderTrim(string(t), p)
 }
 
 // Render parses and executes a template, returning the results in string format.

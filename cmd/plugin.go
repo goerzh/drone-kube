@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"github.com/goerzh/drone-kube/obj"
+	"github.com/goerzh/drone-kube/util"
 	"io/ioutil"
 	"log"
 	"time"
@@ -40,32 +42,11 @@ type (
 		Started int64
 	}
 
-	Config struct {
-		Ca        string
-		Server    string
-		Token     string
-		Namespace string
-		Template  string
-		Ingress   string
-	}
-
 	Plugin struct {
 		Repo   Repo
 		Build  Build
-		Config Config
+		Config util.Config
 		Job    Job
-	}
-
-	Deployment struct {
-		v1beta1.Deployment
-	}
-
-	Service struct {
-		v1.Service
-	}
-
-	Ingress struct {
-		v1beta1.Ingress
 	}
 )
 
@@ -83,8 +64,8 @@ func (p *Plugin) Exec() error {
 	if p.Config.Namespace == "" {
 		p.Config.Namespace = "default"
 	}
-	if p.Config.Template == "" {
-		log.Fatal("KUBE_TEMPLATE, or template must be defined")
+	if p.Config.Template == "" && p.Config.Service == "" && p.Config.Ingress == "" {
+		log.Fatal("KUBE_TEMPLATE and KUBE_SERVICE_TEMPLATE or KUBE_INGRESS_TEMPLATE or template must be defined")
 	}
 
 	log.Printf("KUBE_SERVER: %s\n KUBE_CA: %s\n KUBE_TOKEN: %s\n",
@@ -96,16 +77,27 @@ func (p *Plugin) Exec() error {
 		log.Fatal(err.Error())
 	}
 
-	var dep v1beta1.Deployment
-	var svc v1.Service
-
-	err = p.decodeYamlToObjects(p.Config.Template, &dep, &svc)
-
-	err = p.applyDeployment(&dep, clientset)
+	var svc obj.Service
+	txt, err := openAndSub(p.Config.Service, p)
 	if err != nil {
 		return err
 	}
-	err = p.applyService(&svc, clientset)
+	svc.Patch = txt
+	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
+	err = dc.Decode(&svc.Data)
+	if err != nil {
+		return err
+	}
+	err = svc.Apply(clientset)
+	if err != nil {
+		return err
+	}
+
+	var dep v1beta1.Deployment
+
+	err = p.decodeYamlToObjects(p.Config.Template, &dep)
+
+	err = p.applyDeployment(&dep, clientset)
 	if err != nil {
 		return err
 	}
@@ -202,23 +194,6 @@ func (p *Plugin) applyDeployment(dep *v1beta1.Deployment, client *kubernetes.Cli
 	return err
 }
 
-func (p *Plugin) applyService(svc *v1.Service, client *kubernetes.Clientset) error {
-	// check and see if there is a deployment already.  If there is, update it.
-	oldDep, err := findService(svc.ObjectMeta.Name, svc.ObjectMeta.Namespace, client)
-	if err != nil {
-		return err
-	}
-	if oldDep.ObjectMeta.Name == svc.ObjectMeta.Name {
-		// update the existing deployment, ignore the deployment that it comes back with
-		_, err = client.CoreV1().Services(p.Config.Namespace).Update(svc)
-		return err
-	}
-	// create the new deployment since this never existed.
-	_, err = client.CoreV1().Services(p.Config.Namespace).Create(svc)
-
-	return err
-}
-
 func findDeployment(depName string, namespace string, c *kubernetes.Clientset) (v1beta1.Deployment, error) {
 	if namespace == "" {
 		namespace = "default"
@@ -247,34 +222,6 @@ func listDeployments(clientset *kubernetes.Clientset, namespace string) ([]v1bet
 	return deployments.Items, err
 }
 
-func findService(svcName string, namespace string, c *kubernetes.Clientset) (v1.Service, error) {
-	if namespace == "" {
-		namespace = "default"
-	}
-	var d v1.Service
-	services, err := listServices(c, namespace)
-	if err != nil {
-		return d, err
-	}
-	for _, thisSvc := range services {
-		if thisSvc.ObjectMeta.Name == svcName {
-			return thisSvc, err
-		}
-	}
-	return d, err
-}
-
-// List the services
-func listServices(clientset *kubernetes.Clientset, namespace string) ([]v1.Service, error) {
-	// docs on this:
-	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	services, err := clientset.CoreV1().Services(namespace).List(v1.ListOptions{})
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	return services.Items, err
-}
-
 // open up the template and then sub variables in. Handlebar stuff.
 func openAndSub(templateFile string, p *Plugin) (string, error) {
 	t, err := ioutil.ReadFile(templateFile)
@@ -282,7 +229,7 @@ func openAndSub(templateFile string, p *Plugin) (string, error) {
 		return "", err
 	}
 	//potty humor!  Render trim toilet paper!  Ha ha, so funny.
-	return RenderTrim(string(t), p)
+	return util.RenderTrim(string(t), p)
 }
 
 // create the connection to kubernetes based on parameters passed in.

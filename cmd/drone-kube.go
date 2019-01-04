@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/goerzh/drone-kube/util"
 	"log"
 	"os"
 
@@ -41,6 +42,11 @@ func main() {
 			Name:   "template",
 			Usage:  "template file to use for deployment: mydeployment.yaml :-)",
 			EnvVar: "KUBE_TEMPLATE,PLUGIN_TEMPLATE",
+		},
+		cli.StringFlag{
+			Name:   "service",
+			Usage:  "template file to use for service: service.yaml :-)",
+			EnvVar: "KUBE_SERVICE_TEMPLATE,PLUGIN_SERVICE_TEMPLATE",
 		},
 		cli.StringFlag{
 			Name:   "ingress",
@@ -151,12 +157,13 @@ func run(c *cli.Context) error {
 		Job: Job{
 			Started: c.Int64("job.started"),
 		},
-		Config: Config{
+		Config: util.Config{
 			Token:     c.String("token"),
 			Server:    c.String("server"),
 			Ca:        c.String("ca"),
 			Namespace: c.String("namespace"),
 			Template:  c.String("template"),
+			Service:   c.String("service"),
 			Ingress:   c.String("ingress"),
 		},
 	}
