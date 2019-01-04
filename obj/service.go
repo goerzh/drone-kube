@@ -36,8 +36,8 @@ func (s *Service) Apply(client *kubernetes.Clientset) error {
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	if old != nil {
-		// create the new deployment since this never existed.
+	if old == nil {
+		// create the new service since this never existed.
 		_, err = client.CoreV1().Services(s.Config.Namespace).Create(&s.Data)
 		if err != nil {
 			return errors.WithStack(err)
