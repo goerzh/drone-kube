@@ -41,17 +41,17 @@ func main() {
 		cli.StringFlag{
 			Name:   "template",
 			Usage:  "template file to use for deployment: mydeployment.yaml :-)",
-			EnvVar: "KUBE_TEMPLATE,PLUGIN_TEMPLATE",
+			EnvVar: "KUBE_TEMPLATE,PLUGIN_TEMPLATE,PLUGIN_DEPLOY,PLUGIN_DEPLOY_TEMPLATE",
 		},
 		cli.StringFlag{
 			Name:   "service",
 			Usage:  "template file to use for service: service.yaml :-)",
-			EnvVar: "KUBE_SERVICE_TEMPLATE,PLUGIN_SERVICE_TEMPLATE",
+			EnvVar: "KUBE_SERVICE_TEMPLATE,PLUGIN_SERVICE,PLUGIN_SERVICE_TEMPLATE",
 		},
 		cli.StringFlag{
 			Name:   "ingress",
 			Usage:  "template file to use for ingress: ingress.yaml :-)",
-			EnvVar: "KUBE_INGRESS_TEMPLATE,PLUGIN_INGRESS_TEMPLATE",
+			EnvVar: "KUBE_INGRESS_TEMPLATE,PLUGIN_INGRESS,PLUGIN_INGRESS_TEMPLATE",
 		},
 		cli.StringFlag{
 			Name:   "repo.owner",
