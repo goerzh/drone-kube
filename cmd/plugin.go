@@ -8,15 +8,16 @@ import (
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
 	"io/ioutil"
+	"k8s.io/api/apps/v1beta1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"log"
 	"time"
 
+	extendV1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-	utilyaml "k8s.io/kubernetes/pkg/util/yaml"
 )
 
 type (
@@ -105,9 +106,9 @@ func (p *Plugin) Exec() error {
 		}
 	}
 
-	// apply ingress
+	//apply ingress
 	if p.Config.Ingress != "" {
-		var ig v1beta1.Ingress
+		var ig extendV1beta1.Ingress
 		err = p.decodeYamlToObjects(p.Config.Ingress, &ig)
 		err = p.applyIngress(&ig, clientset)
 
@@ -119,59 +120,59 @@ func (p *Plugin) Exec() error {
 	return err
 }
 
-func (p *Plugin) applyIngress(ig *v1beta1.Ingress, client *kubernetes.Clientset) error {
+func (p *Plugin) applyIngress(ig *extendV1beta1.Ingress, client *kubernetes.Clientset) error {
 	// check and see if there is a deployment already.  If there is, update it.
 	oldDep, err := findIngress(ig.ObjectMeta.Name, ig.ObjectMeta.Namespace, client)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
 	if oldDep.ObjectMeta.Name == ig.ObjectMeta.Name {
 		// update the existing deployment, ignore the deployment that it comes back with
 		_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Update(ig)
-		return err
+		return errors.WithStack(err)
 	}
 	// create the new deployment since this never existed.
 	_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Create(ig)
 
-	return err
+	return errors.WithStack(err)
 }
 
 func (p *Plugin) decodeYamlToObjects(fName string, objects ...interface{}) error {
 	// parse the template file and do substitutions
 	txt, err := openAndSub(fName, p)
 	if err != nil {
-		return err
+		return errors.WithStack(err)
 	}
-	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
+	dc := yaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(txt)))
 	for _, o := range objects {
 		err = dc.Decode(&o)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 	}
 
 	return nil
 }
 
-func findIngress(igName string, namespace string, c *kubernetes.Clientset) (v1beta1.Ingress, error) {
+func findIngress(igName string, namespace string, c *kubernetes.Clientset) (extendV1beta1.Ingress, error) {
 	if namespace == "" {
 		namespace = "default"
 	}
-	var d v1beta1.Ingress
+	var d extendV1beta1.Ingress
 	ingresses, err := listIngresses(c, namespace)
 	if err != nil {
-		return d, err
+		return d, errors.WithStack(err)
 	}
 	for _, thisIg := range ingresses {
 		if thisIg.ObjectMeta.Name == igName {
-			return thisIg, err
+			return thisIg, errors.WithStack(err)
 		}
 	}
-	return d, err
+	return d, nil
 }
 
 // List the deployments
-func listIngresses(clientset *kubernetes.Clientset, namespace string) ([]v1beta1.Ingress, error) {
+func listIngresses(clientset *kubernetes.Clientset, namespace string) ([]extendV1beta1.Ingress, error) {
 	// docs on this:
 	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
 	ingresses, err := clientset.ExtensionsV1beta1().Ingresses(namespace).List(v1.ListOptions{})
@@ -189,11 +190,11 @@ func (p *Plugin) applyDeployment(dep *v1beta1.Deployment, client *kubernetes.Cli
 	}
 	if oldDep.ObjectMeta.Name == dep.ObjectMeta.Name {
 		// update the existing deployment, ignore the deployment that it comes back with
-		_, err = client.ExtensionsV1beta1().Deployments(p.Config.Namespace).Update(dep)
+		_, err = client.AppsV1beta1().Deployments(p.Config.Namespace).Update(dep)
 		return err
 	}
 	// create the new deployment since this never existed.
-	_, err = client.ExtensionsV1beta1().Deployments(p.Config.Namespace).Create(dep)
+	_, err = client.AppsV1beta1().Deployments(p.Config.Namespace).Create(dep)
 
 	return err
 }
@@ -219,9 +220,9 @@ func findDeployment(depName string, namespace string, c *kubernetes.Clientset) (
 func listDeployments(clientset *kubernetes.Clientset, namespace string) ([]v1beta1.Deployment, error) {
 	// docs on this:
 	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	deployments, err := clientset.ExtensionsV1beta1().Deployments(namespace).List(v1.ListOptions{})
+	deployments, err := clientset.AppsV1beta1().Deployments(namespace).List(v1.ListOptions{})
 	if err != nil {
-		log.Fatal(err.Error())
+		return nil, errors.WithStack(err)
 	}
 	return deployments.Items, err
 }

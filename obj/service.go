@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
+	coreV1 "k8s.io/api/core/v1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
-	utilyaml "k8s.io/kubernetes/pkg/util/yaml"
 	"log"
 )
 
 type Service struct {
-	Data   v1.Service
+	Data   coreV1.Service
 	Patch  string
 	Config util.Config
 }
@@ -49,11 +50,11 @@ func (s *Service) Apply(client *kubernetes.Clientset) error {
 	return nil
 }
 
-func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset) (*v1.Service, error) {
+func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset) (*coreV1.Service, error) {
 	if namespace == "" {
 		namespace = "default"
 	}
-	var d *v1.Service
+	var d *coreV1.Service
 	services, err := s.list(c, namespace)
 	if err != nil {
 		return d, errors.WithStack(err)
@@ -67,10 +68,10 @@ func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset
 }
 
 // List the services
-func (s *Service) list(clientset *kubernetes.Clientset, namespace string) ([]v1.Service, error) {
+func (s *Service) list(clientset *kubernetes.Clientset, namespace string) ([]coreV1.Service, error) {
 	// docs on this:
 	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	services, err := clientset.CoreV1().Services(namespace).List(v1.ListOptions{})
+	services, err := clientset.CoreV1().Services(namespace).List(metaV1.ListOptions{})
 	if err != nil {
 		log.Fatal(err.Error())
 	}

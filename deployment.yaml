@@ -1,20 +1,39 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: pipeline-registry
+  labels:
+    qcloud-app: fk-model-deploy
+  name: fk-model-deploy
+  namespace: default
 spec:
-  replicas: 3
+  replicas: 1
+  selector:
+    matchLabels:
+      qcloud-app: fk-model-deploy
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
-        app: pipeline-registry
+        qcloud-app: fk-model-deploy
     spec:
+      initContainers:
+      - name: setup
+        image: ccr.ccs.tencentyun.com/kuainiu/fk-model:45dc61f6dbf24ed1c03fa31477820512516d6a20
+        args: ["sh", "-c", "cp -rf /www/* /var/www/html"]
+        imagePullPolicy: Always
+
       containers:
-      - name: pipeline-registry
-        image: vallard/pipeline-registry:{{ build.number }}
-        env:
-        - name: PIPELINE_REGISTRY
-          value: registry.cluster.local
-        ports:
-        - containerPort: 3000
+      - image: php:7.3.0-fpm-alpine3.8
+        imagePullPolicy: Always
+        name: fk-model-fpm-deploy
+
+      dnsPolicy: ClusterFirst
+      imagePullSecrets:
+        - name: qcloudregistrykey
+        - name: tencenthubkey
+      restartPolicy: Always
 
