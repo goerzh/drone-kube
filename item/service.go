@@ -1,4 +1,4 @@
-package obj
+package item
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
-	"log"
 )
 
 type Service struct {
@@ -33,11 +32,12 @@ func NewService(patch string, cfg util.Config) (*Service, error) {
 
 func (s *Service) Apply(client *kubernetes.Clientset) error {
 	// check and see if there is a deployment already.  If there is, update it.
-	old, err := s.find(s.Data.ObjectMeta.Name, s.Data.ObjectMeta.Namespace, client)
+	origin, err := s.findOrigin(s.Data.ObjectMeta.Name, s.Data.ObjectMeta.Namespace, client)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-	if old == nil {
+
+	if origin == nil {
 		// create the new service since this never existed.
 		_, err = client.CoreV1().Services(s.Config.Namespace).Create(&s.Data)
 		if err != nil {
@@ -50,30 +50,13 @@ func (s *Service) Apply(client *kubernetes.Clientset) error {
 	return nil
 }
 
-func (s *Service) find(svcName string, namespace string, c *kubernetes.Clientset) (*coreV1.Service, error) {
+func (s *Service) findOrigin(svcName string, namespace string, c *kubernetes.Clientset) (*coreV1.Service, error) {
 	if namespace == "" {
 		namespace = "default"
 	}
-	var d *coreV1.Service
-	services, err := s.list(c, namespace)
+	record, err := c.CoreV1().Services(namespace).Get(svcName, metaV1.GetOptions{})
 	if err != nil {
-		return d, errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
-	for _, thisSvc := range services {
-		if thisSvc.ObjectMeta.Name == svcName {
-			return &thisSvc, nil
-		}
-	}
-	return d, nil
-}
-
-// List the services
-func (s *Service) list(clientset *kubernetes.Clientset, namespace string) ([]coreV1.Service, error) {
-	// docs on this:
-	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	services, err := clientset.CoreV1().Services(namespace).List(metaV1.ListOptions{})
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	return services.Items, nil
+	return record, nil
 }

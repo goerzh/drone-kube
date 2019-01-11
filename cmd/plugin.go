@@ -3,21 +3,15 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
-	"fmt"
-	"github.com/goerzh/drone-kube/obj"
+	"github.com/goerzh/drone-kube/item"
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
 	"io/ioutil"
-	"k8s.io/api/apps/v1beta1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"log"
-	"time"
-
-	extendV1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"log"
 )
 
 type (
@@ -76,28 +70,27 @@ func (p *Plugin) Exec() error {
 		log.Fatal(err.Error())
 	}
 
-	// apply deployment
-	var dep v1beta1.Deployment
-
-	err = p.decodeYamlToObjects(p.Config.Template, &dep)
+	patch, err := openAndSub(p.Config.Template, p)
 	if err != nil {
 		return errors.WithStack(err)
 	}
-
-	err = p.applyDeployment(&dep, clientset)
+	dep, err := item.NewDeployment(patch, p.Config)
 	if err != nil {
+		return errors.WithStack(err)
+	}
+	if err = dep.Apply(clientset); err != nil {
 		return errors.WithStack(err)
 	}
 
 	// apply service
 	if p.Config.Service != "" {
-		txt, err := openAndSub(p.Config.Service, p)
+		patch, err = openAndSub(p.Config.Service, p)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
-		svc, err := obj.NewService(txt, p.Config)
+		svc, err := item.NewService(patch, p.Config)
 		if err != nil {
-			return err
+			return errors.WithStack(err)
 		}
 
 		err = svc.Apply(clientset)
@@ -108,33 +101,22 @@ func (p *Plugin) Exec() error {
 
 	//apply ingress
 	if p.Config.Ingress != "" {
-		var ig extendV1beta1.Ingress
-		err = p.decodeYamlToObjects(p.Config.Ingress, &ig)
-		err = p.applyIngress(&ig, clientset)
+		patch, err = openAndSub(p.Config.Ingress, p)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+		svc, err := item.NewIngress(patch, p.Config)
+		if err != nil {
+			return errors.WithStack(err)
+		}
 
+		err = svc.Apply(clientset)
 		if err != nil {
 			return errors.WithStack(err)
 		}
 	}
 
 	return err
-}
-
-func (p *Plugin) applyIngress(ig *extendV1beta1.Ingress, client *kubernetes.Clientset) error {
-	// check and see if there is a deployment already.  If there is, update it.
-	oldDep, err := findIngress(ig.ObjectMeta.Name, ig.ObjectMeta.Namespace, client)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	if oldDep.ObjectMeta.Name == ig.ObjectMeta.Name {
-		// update the existing deployment, ignore the deployment that it comes back with
-		_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Update(ig)
-		return errors.WithStack(err)
-	}
-	// create the new deployment since this never existed.
-	_, err = client.ExtensionsV1beta1().Ingresses(p.Config.Namespace).Create(ig)
-
-	return errors.WithStack(err)
 }
 
 func (p *Plugin) decodeYamlToObjects(fName string, objects ...interface{}) error {
@@ -152,79 +134,6 @@ func (p *Plugin) decodeYamlToObjects(fName string, objects ...interface{}) error
 	}
 
 	return nil
-}
-
-func findIngress(igName string, namespace string, c *kubernetes.Clientset) (extendV1beta1.Ingress, error) {
-	if namespace == "" {
-		namespace = "default"
-	}
-	var d extendV1beta1.Ingress
-	ingresses, err := listIngresses(c, namespace)
-	if err != nil {
-		return d, errors.WithStack(err)
-	}
-	for _, thisIg := range ingresses {
-		if thisIg.ObjectMeta.Name == igName {
-			return thisIg, errors.WithStack(err)
-		}
-	}
-	return d, nil
-}
-
-// List the deployments
-func listIngresses(clientset *kubernetes.Clientset, namespace string) ([]extendV1beta1.Ingress, error) {
-	// docs on this:
-	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	ingresses, err := clientset.ExtensionsV1beta1().Ingresses(namespace).List(v1.ListOptions{})
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-	return ingresses.Items, err
-}
-
-func (p *Plugin) applyDeployment(dep *v1beta1.Deployment, client *kubernetes.Clientset) error {
-	// check and see if there is a deployment already.  If there is, update it.
-	oldDep, err := findDeployment(dep.ObjectMeta.Name, dep.ObjectMeta.Namespace, client)
-	if err != nil {
-		return err
-	}
-	if oldDep.ObjectMeta.Name == dep.ObjectMeta.Name {
-		// update the existing deployment, ignore the deployment that it comes back with
-		_, err = client.AppsV1beta1().Deployments(p.Config.Namespace).Update(dep)
-		return err
-	}
-	// create the new deployment since this never existed.
-	_, err = client.AppsV1beta1().Deployments(p.Config.Namespace).Create(dep)
-
-	return err
-}
-
-func findDeployment(depName string, namespace string, c *kubernetes.Clientset) (v1beta1.Deployment, error) {
-	if namespace == "" {
-		namespace = "default"
-	}
-	var d v1beta1.Deployment
-	deployments, err := listDeployments(c, namespace)
-	if err != nil {
-		return d, err
-	}
-	for _, thisDep := range deployments {
-		if thisDep.ObjectMeta.Name == depName {
-			return thisDep, err
-		}
-	}
-	return d, err
-}
-
-// List the deployments
-func listDeployments(clientset *kubernetes.Clientset, namespace string) ([]v1beta1.Deployment, error) {
-	// docs on this:
-	// https://github.com/kubernetes/client-go/blob/master/pkg/apis/extensions/types.go
-	deployments, err := clientset.AppsV1beta1().Deployments(namespace).List(v1.ListOptions{})
-	if err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return deployments.Items, err
 }
 
 // open up the template and then sub variables in. Handlebar stuff.
@@ -265,16 +174,4 @@ func (p Plugin) createKubeClient() (*kubernetes.Clientset, error) {
 	}
 
 	return kubernetes.NewForConfig(actualCfg)
-}
-
-// Just an example from the client specification.  Code not really used.
-func watchPodCounts(clientset *kubernetes.Clientset) {
-	for {
-		pods, err := clientset.Core().Pods("").List(v1.ListOptions{})
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-		fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
-		time.Sleep(10 * time.Second)
-	}
 }
