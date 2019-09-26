@@ -5,6 +5,7 @@ import (
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
 	extendV1beta1 "k8s.io/api/extensions/v1beta1"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
@@ -60,6 +61,10 @@ func (ig *Ingress) findOrigin(igName string, namespace string, c *kubernetes.Cli
 
 	record, err := c.ExtensionsV1beta1().Ingresses(namespace).Get(igName, v1.GetOptions{})
 	if err != nil {
+		if kubeerrors.IsNotFound(err) {
+			return nil, nil
+		}
+
 		return nil, errors.WithStack(err)
 	}
 	return record, nil

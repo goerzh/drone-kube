@@ -5,6 +5,7 @@ import (
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
 	"k8s.io/api/apps/v1beta1"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
@@ -61,6 +62,10 @@ func (dm *Deployment) findOrigin(depName string, namespace string, c *kubernetes
 
 	record, err := c.AppsV1beta1().Deployments(namespace).Get(depName, v1.GetOptions{})
 	if err != nil {
+		if kubeerrors.IsNotFound(err) {
+			return nil, nil
+		}
+
 		return nil, errors.WithStack(err)
 	}
 	return record, nil
