@@ -2,17 +2,21 @@ package item
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/goerzh/drone-kube/util"
 	"github.com/pkg/errors"
+	"io"
 	coreV1 "k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
+	"log"
 )
 
 type Service struct {
-	Data   coreV1.Service
+	Data   []coreV1.Service
 	Patch  string
 	Config util.Config
 }
@@ -23,30 +27,42 @@ func NewService(patch string, cfg util.Config) (*Service, error) {
 		Config: cfg,
 	}
 	dc := utilyaml.NewYAMLToJSONDecoder(bytes.NewReader([]byte(svc.Patch)))
-	err := dc.Decode(&svc.Data)
-	if err != nil {
-		return nil, errors.WithStack(err)
+	for {
+		ext := runtime.RawExtension{}
+		if err := dc.Decode(&ext); err != nil {
+			if err == io.EOF {
+				return svc, nil
+			}
+			return nil, errors.WithStack(err)
+		}
+		service := coreV1.Service{}
+		err := json.Unmarshal(ext.Raw, &service)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+		svc.Data = append(svc.Data, service)
 	}
-
-	return svc, nil
 }
 
 func (s *Service) Apply(client *kubernetes.Clientset) error {
-	// check and see if there is a deployment already.  If there is, update it.
-	origin, err := s.findOrigin(s.Data.ObjectMeta.Name, s.Data.ObjectMeta.Namespace, client)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	if origin == nil {
-		// create the new service since this never existed.
-		_, err = client.CoreV1().Services(s.Config.Namespace).Create(&s.Data)
+	for _, service := range s.Data {
+		// check and see if there is a deployment already.  If there is, update it.
+		origin, err := s.findOrigin(service.ObjectMeta.Name, service.ObjectMeta.Namespace, client)
 		if err != nil {
 			return errors.WithStack(err)
 		}
-	}
 
-	// TODO update service
+		if origin == nil {
+			// create the new service since this never existed.
+			_, err = client.CoreV1().Services(s.Config.Namespace).Create(&service)
+			if err != nil {
+				return errors.WithStack(err)
+			}
+			log.Println("create service " + service.ObjectMeta.Name)
+		}
+
+		// TODO update service
+	}
 
 	return nil
 }
